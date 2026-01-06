@@ -1,5 +1,5 @@
 <script setup>
-import { CheckCircle, Mail, Lock, ArrowLeft, Github, Chrome, Loader2 } from "lucide-vue-next";
+import { CheckCircle, Mail, Lock, ArrowLeft, Github, Chrome, Loader2, UserCircle } from "lucide-vue-next";
 import { toast } from "vue-sonner";
 
 const { fetch } = useUserSession();
@@ -13,6 +13,16 @@ definePageMeta({
 const email = ref("");
 const password = ref("");
 const isLoading = ref(false);
+
+// Demo account credentials
+const demoEmail = "coba@gmail.com";
+const demoPassword = "coba12345";
+
+const fillDemoCredentials = () => {
+  email.value = demoEmail;
+  password.value = demoPassword;
+  toast.info("Kredensial demo telah diisi!");
+};
 
 const handleLogin = async () => {
   // Validasi input
@@ -87,6 +97,26 @@ const handleGithubLogin = () => {
 
     <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
       <div class="bg-white py-10 px-6 shadow-xl shadow-slate-200/50 sm:rounded-3xl border border-slate-100 sm:px-12">
+        <!-- Demo Account Info -->
+        <div class="mb-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
+          <div class="flex items-center gap-2 mb-2">
+            <UserCircle :size="20" class="text-indigo-600" />
+            <span class="text-sm font-semibold text-indigo-700">Akun Percobaan</span>
+          </div>
+          <div class="text-xs text-indigo-600 space-y-1">
+            <p><span class="font-medium">Email:</span> {{ demoEmail }}</p>
+            <p><span class="font-medium">Password:</span> {{ demoPassword }}</p>
+          </div>
+          <button
+            type="button"
+            @click="fillDemoCredentials"
+            :disabled="isLoading"
+            class="mt-3 w-full py-2 px-3 text-xs font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Gunakan Akun Demo
+          </button>
+        </div>
+
         <form class="space-y-6" @submit.prevent="handleLogin">
           <div>
             <label for="email" class="block text-sm font-semibold text-slate-700">Alamat Email</label>
