@@ -294,71 +294,73 @@ onUnmounted(() => unsubscribe());
 <template>
   <div class="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
     <!-- Header Section -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6 sm:mb-8">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6 lg:mb-8">
       <div>
-        <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Papan Tugas</h1>
-        <p class="text-xs sm:text-sm text-slate-500 font-medium">Atur alur kerja Anda dengan drag and drop.</p>
+        <h1 class="text-lg sm:text-xl lg:text-2xl font-extrabold text-slate-900 tracking-tight">Papan Tugas</h1>
+        <p class="text-[10px] sm:text-xs lg:text-sm text-slate-500 font-medium">Atur alur kerja Anda dengan drag and drop.</p>
       </div>
-      <div class="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm w-fit">
-        <button class="px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold bg-indigo-50 text-indigo-700 rounded-lg flex items-center gap-1.5 sm:gap-2"><Layout :size="14" /> Kanban</button>
+      <div class="flex items-center gap-2 bg-white p-1 sm:p-1.5 rounded-lg sm:rounded-xl border border-slate-200 shadow-sm w-fit">
+        <button class="px-2.5 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-[9px] sm:text-[10px] lg:text-xs font-bold bg-indigo-50 text-indigo-700 rounded-md sm:rounded-lg flex items-center gap-1 sm:gap-1.5 lg:gap-2">
+          <Layout :size="12" class="sm:w-[14px] sm:h-[14px]" /> Kanban
+        </button>
       </div>
     </div>
 
     <!-- Loading State -->
-    <div v-if="isLoading" class="flex flex-col items-center justify-center py-16 sm:py-24">
-      <div class="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-4 border-slate-100 border-t-indigo-600"></div>
-      <p class="mt-4 text-slate-500 text-xs sm:text-sm font-semibold italic">Sinkronisasi data...</p>
+    <div v-if="isLoading" class="flex flex-col items-center justify-center py-12 sm:py-16 lg:py-24">
+      <div class="animate-spin rounded-full h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12 border-4 border-slate-100 border-t-indigo-600"></div>
+      <p class="mt-3 sm:mt-4 text-slate-500 text-[10px] sm:text-xs lg:text-sm font-semibold italic">Sinkronisasi data...</p>
     </div>
 
     <!-- Kanban Board -->
     <div v-else class="relative">
       <!-- Mobile scroll hint -->
-      <div class="lg:hidden text-[10px] text-slate-400 font-medium mb-2 flex items-center gap-1">
+      <div class="lg:hidden text-[9px] sm:text-[10px] text-slate-400 font-medium mb-2 flex items-center gap-1">
         <span>← Geser untuk melihat kolom lain →</span>
       </div>
 
       <!-- Scrollable container for mobile/tablet -->
-      <div class="flex lg:grid lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6 overflow-x-auto lg:overflow-x-visible pb-4 lg:pb-0 snap-x snap-mandatory scroll-smooth -mx-3 px-3 sm:-mx-4 sm:px-4 lg:mx-0 lg:px-0">
+      <div class="flex lg:grid lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 overflow-x-auto lg:overflow-x-visible pb-4 lg:pb-0 snap-x snap-mandatory scroll-smooth -mx-3 px-3 sm:-mx-4 sm:px-4 lg:mx-0 lg:px-0">
         <div
           v-for="column in columns"
           :key="column.status"
-          class="flex-shrink-0 w-[280px] sm:w-[320px] lg:w-auto snap-center flex flex-col bg-slate-100/40 rounded-2xl border border-slate-200/60 p-3 sm:p-4 min-h-[500px] sm:min-h-[600px] lg:min-h-[650px] transition-all"
+          class="flex-shrink-0 w-[260px] sm:w-[300px] lg:w-auto snap-center flex flex-col bg-slate-100/40 rounded-xl sm:rounded-2xl border border-slate-200/60 p-2.5 sm:p-3 lg:p-4 min-h-[400px] sm:min-h-[500px] lg:min-h-[650px] transition-all"
         >
           <!-- Column Header -->
-          <div class="flex items-center justify-between mb-4 sm:mb-6 px-1">
-            <div class="flex items-center gap-2 sm:gap-3">
+          <div class="flex items-center justify-between mb-3 sm:mb-4 lg:mb-6 px-0.5 sm:px-1">
+            <div class="flex items-center gap-1.5 sm:gap-2 lg:gap-3">
               <component
                 :is="column.icon"
-                :size="16"
-                class="sm:w-[18px] sm:h-[18px]"
+                :size="14"
+                class="sm:w-4 sm:h-4 lg:w-[18px] lg:h-[18px]"
                 :class="{
                   'text-indigo-500': column.status === 'PLAN',
                   'text-amber-500': column.status === 'DOING',
                   'text-emerald-500': column.status === 'DONE',
                 }"
               />
-              <h3 class="font-bold text-slate-700 text-xs sm:text-sm uppercase tracking-wider sm:tracking-widest">{{ column.title }}</h3>
-              <span class="px-1.5 sm:px-2 py-0.5 bg-white border border-slate-200 text-slate-500 text-[9px] sm:text-[10px] font-black rounded-md shadow-sm">
+              <h3 class="font-bold text-slate-700 text-[10px] sm:text-xs lg:text-sm uppercase tracking-wider lg:tracking-widest">{{ column.title }}</h3>
+              <span class="px-1 sm:px-1.5 lg:px-2 py-0.5 bg-white border border-slate-200 text-slate-500 text-[8px] sm:text-[9px] lg:text-[10px] font-black rounded-md shadow-sm">
                 {{ getTasksByStatus(column.status).length }}
               </span>
             </div>
-            <button @click="openAddModal(column.status)" class="p-1 sm:p-1.5 bg-white text-slate-400 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200 rounded-lg transition-all shadow-sm">
-              <Plus :size="14" class="sm:w-4 sm:h-4" />
+            <button @click="openAddModal(column.status)" class="p-1 sm:p-1.5 bg-white text-slate-400 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200 rounded-md sm:rounded-lg transition-all shadow-sm">
+              <Plus :size="12" class="sm:w-[14px] sm:h-[14px] lg:w-4 lg:h-4" />
             </button>
           </div>
 
           <!-- Droppable Area -->
           <div
             data-droppable
-            class="flex-1 space-y-3 sm:space-y-4 rounded-xl transition-all duration-300 overflow-y-auto"
+            class="flex-1 space-y-2 sm:space-y-3 lg:space-y-4 rounded-lg sm:rounded-xl transition-all duration-300 overflow-y-auto"
             :class="{ 'bg-indigo-50/50 ring-2 ring-indigo-300 ring-dashed': dragOverColumn === column.status }"
             @dragover="onDragOver($event, column.status)"
             @dragleave="onDragLeave"
             @drop="onDrop($event, column.status)"
           >
             <!-- Empty State -->
-            <div v-if="getTasksByStatus(column.status).length === 0" class="border-2 border-dashed border-slate-200 rounded-2xl py-8 sm:py-12 flex flex-col items-center justify-center opacity-40">
-              <p class="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Tarik tugas ke sini</p>
+            <div v-if="getTasksByStatus(column.status).length === 0" class="border-2 border-dashed border-slate-200 rounded-xl sm:rounded-2xl py-6 sm:py-8 lg:py-12 flex flex-col items-center justify-center opacity-40">
+              <p class="text-[8px] sm:text-[9px] lg:text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Tarik tugas ke sini</p>
             </div>
 
             <!-- Task Cards -->
@@ -369,7 +371,7 @@ onUnmounted(() => unsubscribe());
               @dragstart="onDragStart($event, task.id)"
               @dragend="onDragEnd"
               @dragover="onDragOverTask($event, task.id)"
-              class="group bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200 transition-all duration-200 relative overflow-hidden"
+              class="group bg-white p-2.5 sm:p-3 lg:p-4 rounded-lg sm:rounded-xl shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200 transition-all duration-200 relative overflow-hidden"
               :class="{
                 'opacity-30 scale-95': draggedTaskId === task.id,
                 'ring-2 ring-indigo-500': dragOverTaskId === task.id && draggedTaskId !== task.id,
@@ -386,40 +388,40 @@ onUnmounted(() => unsubscribe());
               ></div>
 
               <!-- Task Content -->
-              <div class="flex items-start justify-between gap-2 sm:gap-3">
-                <h4 class="font-bold text-slate-800 text-sm sm:text-[15px] leading-snug flex-1">{{ task.name }}</h4>
-                <div class="flex gap-0.5 sm:gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button @click.stop="openTagModal(task.id)" class="p-1.5 sm:p-1 text-slate-400 hover:text-indigo-600 transition-colors">
-                    <TagIcon :size="14" />
+              <div class="flex items-start justify-between gap-2">
+                <h4 class="font-bold text-slate-800 text-xs sm:text-sm lg:text-[15px] leading-snug flex-1">{{ task.name }}</h4>
+                <div class="flex gap-0.5 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button @click.stop="openTagModal(task.id)" class="p-1 sm:p-1.5 text-slate-400 hover:text-indigo-600 transition-colors">
+                    <TagIcon :size="12" class="sm:w-[14px] sm:h-[14px]" />
                   </button>
-                  <button @click.stop="openEditModal(task)" class="p-1.5 sm:p-1 text-slate-400 hover:text-indigo-600 transition-colors">
-                    <Pencil :size="14" />
+                  <button @click.stop="openEditModal(task)" class="p-1 sm:p-1.5 text-slate-400 hover:text-indigo-600 transition-colors">
+                    <Pencil :size="12" class="sm:w-[14px] sm:h-[14px]" />
                   </button>
-                  <button @click.stop="deleteTask(task.id)" class="p-1.5 sm:p-1 text-slate-400 hover:text-red-500 transition-colors">
-                    <Trash2 :size="14" />
+                  <button @click.stop="deleteTask(task.id)" class="p-1 sm:p-1.5 text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 :size="12" class="sm:w-[14px] sm:h-[14px]" />
                   </button>
                 </div>
               </div>
 
-              <p v-if="task.description" class="text-[11px] sm:text-xs text-slate-500 mt-1.5 sm:mt-2 line-clamp-2 font-medium leading-relaxed">
+              <p v-if="task.description" class="text-[10px] sm:text-[11px] lg:text-xs text-slate-500 mt-1 sm:mt-1.5 lg:mt-2 line-clamp-2 font-medium leading-relaxed">
                 {{ task.description }}
               </p>
 
               <!-- Task Tags -->
-              <div v-if="getTaskTags(task.id).length" class="mt-2 sm:mt-3 flex flex-wrap gap-1.5">
-                <span v-for="tag in getTaskTags(task.id)" :key="tag.id" class="px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold text-white shadow-sm" :style="{ backgroundColor: tag.color || '#3B82F6' }">
+              <div v-if="getTaskTags(task.id).length" class="mt-2 sm:mt-2.5 lg:mt-3 flex flex-wrap gap-1 sm:gap-1.5">
+                <span v-for="tag in getTaskTags(task.id)" :key="tag.id" class="px-1.5 sm:px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] lg:text-[11px] font-bold text-white shadow-sm" :style="{ backgroundColor: tag.color || '#3B82F6' }">
                   {{ tag.name }}
                 </span>
               </div>
 
               <!-- Task Footer -->
-              <div class="mt-3 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-50 flex items-center justify-between">
+              <div class="mt-2 sm:mt-3 lg:mt-4 pt-2 sm:pt-2.5 lg:pt-3 border-t border-slate-50 flex items-center justify-between">
                 <div class="flex items-center gap-1 sm:gap-1.5 text-slate-300">
-                  <GripVertical :size="12" />
-                  <span class="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400">Task-{{ task.id }}</span>
+                  <GripVertical :size="10" class="sm:w-3 sm:h-3" />
+                  <span class="text-[8px] sm:text-[9px] lg:text-[10px] font-bold uppercase tracking-widest text-slate-400">Task-{{ task.id }}</span>
                 </div>
-                <div class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
-                  <MoreVertical :size="10" class="sm:w-3 sm:h-3 text-slate-400" />
+                <div class="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                  <MoreVertical :size="8" class="sm:w-[10px] sm:h-[10px] lg:w-3 lg:h-3 text-slate-400" />
                 </div>
               </div>
             </div>
