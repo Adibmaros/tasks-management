@@ -1,5 +1,6 @@
 <script setup>
 import { CheckCircle, Layout, Users, Zap, ArrowRight, Github, Twitter, Linkedin, Menu, X, Play, Star } from "lucide-vue-next";
+import { toast } from "vue-sonner";
 
 const features = [
   {
@@ -22,6 +23,12 @@ const features = [
 const benefits = ["Real-time notifications", "Advanced Analytics", "Unlimited Projects"];
 
 const mobileMenuOpen = ref(false);
+
+const handleDemoClick = () => {
+  toast.info("Demo belum tersedia. Fitur ini akan segera hadir!", {
+    duration: 4000,
+  });
+};
 </script>
 
 <template>
@@ -132,7 +139,10 @@ const mobileMenuOpen = ref(false);
               <span class="relative z-10 flex items-center gap-2"> Mulai Sekarang <ArrowRight class="group-hover:translate-x-1 transition-transform duration-300" :size="20" /> </span>
               <div class="absolute inset-0 bg-gradient-to-r from-slate-800 to-slate-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             </NuxtLink>
-            <button class="bg-white border-2 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 px-8 py-4 rounded-xl font-bold transition-all duration-300 hover:shadow-lg hover:-translate-y-1 flex items-center gap-2 group">
+            <button
+              @click="handleDemoClick"
+              class="bg-white border-2 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 px-8 py-4 rounded-xl font-bold transition-all duration-300 hover:shadow-lg hover:-translate-y-1 flex items-center gap-2 group"
+            >
               <Play class="text-indigo-600 group-hover:scale-110 transition-transform" :size="20" />
               Lihat Demo
             </button>

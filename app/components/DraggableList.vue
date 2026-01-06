@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { Plus, Pencil, Trash2, GripVertical, Layout, MoreVertical, Clock, CheckCircle2, Circle } from "lucide-vue-next";
+import { Plus, Pencil, Trash2, GripVertical, Layout, MoreVertical, Clock, CheckCircle2, Circle, TagIcon } from "lucide-vue-next";
 
 // 1. Interfaces & Types
+interface Tag {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
 interface Task {
   id: number;
   name: string;
   description?: string | null;
   status: "PLAN" | "DOING" | "DONE";
   position: number;
+  tags?: Tag[];
 }
 
 const props = defineProps<{
@@ -17,13 +24,19 @@ const props = defineProps<{
 // 2. State Management
 const tasks = ref<Task[]>([]);
 const isLoading = ref(true);
+const isSubmitting = ref(false);
 const isDragging = ref(false);
 const showAddModal = ref(false);
 const showEditModal = ref(false);
+const showTagModal = ref(false);
+const selectedTaskId = ref<number | undefined>(undefined);
 const addToStatus = ref<"PLAN" | "DOING" | "DONE">("PLAN");
 const editingTask = ref<Task | null>(null);
 const newTaskName = ref("");
 const newTaskDescription = ref("");
+
+// Task tags cache
+const taskTagsMap = ref<Record<number, Tag[]>>({});
 
 // Drag & Drop States
 const draggedTaskId = ref<number | null>(null);
@@ -45,6 +58,24 @@ const getTasksByStatus = (status: "PLAN" | "DOING" | "DONE") => {
   return tasks.value.filter((task) => task.status === status).sort((a, b) => a.position - b.position);
 };
 
+const fetchTaskTags = async (taskId: number) => {
+  try {
+    const tags = await $fetch<Tag[]>(`/api/task-tags?taskId=${taskId}`);
+    taskTagsMap.value[taskId] = tags;
+  } catch (error) {
+    taskTagsMap.value[taskId] = [];
+  }
+};
+
+const fetchAllTaskTags = async () => {
+  const promises = tasks.value.map((task) => fetchTaskTags(task.id));
+  await Promise.all(promises);
+};
+
+const getTaskTags = (taskId: number): Tag[] => {
+  return taskTagsMap.value[taskId] || [];
+};
+
 const fetchTasks = async (silent = false) => {
   try {
     if (!silent) isLoading.value = true;
@@ -52,6 +83,7 @@ const fetchTasks = async (silent = false) => {
     const data = await $fetch<Task[]>(`/api/tasks/user/${props.userId}`);
 
     tasks.value = data;
+    await fetchAllTaskTags();
   } catch (error) {
     // Error handling tanpa logging
   } finally {
@@ -60,7 +92,8 @@ const fetchTasks = async (silent = false) => {
 };
 
 const createTask = async () => {
-  if (!newTaskName.value.trim()) return;
+  if (!newTaskName.value.trim() || isSubmitting.value) return;
+  isSubmitting.value = true;
   setLocalUpdate?.(true);
   try {
     const task = await $fetch<Task>("/api/tasks", {
@@ -76,11 +109,14 @@ const createTask = async () => {
     closeAddModal();
   } catch (error) {
     // Error handling tanpa logging
+  } finally {
+    isSubmitting.value = false;
   }
 };
 
 const updateTask = async () => {
-  if (!editingTask.value || !newTaskName.value.trim()) return;
+  if (!editingTask.value || !newTaskName.value.trim() || isSubmitting.value) return;
+  isSubmitting.value = true;
   setLocalUpdate?.(true);
   try {
     const updated = await $fetch<Task>(`/api/tasks/${editingTask.value.id}`, {
@@ -95,6 +131,8 @@ const updateTask = async () => {
     closeEditModal();
   } catch (error) {
     // Error handling tanpa logging
+  } finally {
+    isSubmitting.value = false;
   }
 };
 
@@ -179,6 +217,22 @@ const closeEditModal = () => {
   editingTask.value = null;
 };
 
+const openTagModal = (taskId: number) => {
+  selectedTaskId.value = taskId;
+  showTagModal.value = true;
+};
+
+const closeTagModal = () => {
+  showTagModal.value = false;
+  selectedTaskId.value = undefined;
+};
+
+const onTagsUpdated = async () => {
+  if (selectedTaskId.value) {
+    await fetchTaskTags(selectedTaskId.value);
+  }
+};
+
 // 5. Drag & Drop Handlers
 const onDragStart = (e: DragEvent, taskId: number) => {
   isDragging.value = true;
@@ -238,102 +292,135 @@ onUnmounted(() => unsubscribe());
 </script>
 
 <template>
-  <div class="p-4 md:p-8 max-w-7xl mx-auto">
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+  <div class="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+    <!-- Header Section -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6 sm:mb-8">
       <div>
-        <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Papan Tugas</h1>
-        <p class="text-sm text-slate-500 font-medium">Atur alur kerja Anda dengan drag and drop.</p>
+        <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Papan Tugas</h1>
+        <p class="text-xs sm:text-sm text-slate-500 font-medium">Atur alur kerja Anda dengan drag and drop.</p>
       </div>
       <div class="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm w-fit">
-        <button class="px-4 py-2 text-xs font-bold bg-indigo-50 text-indigo-700 rounded-lg flex items-center gap-2"><Layout :size="14" /> Kanban</button>
+        <button class="px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold bg-indigo-50 text-indigo-700 rounded-lg flex items-center gap-1.5 sm:gap-2"><Layout :size="14" /> Kanban</button>
       </div>
     </div>
 
-    <div v-if="isLoading" class="flex flex-col items-center justify-center py-24">
-      <div class="animate-spin rounded-full h-12 w-12 border-4 border-slate-100 border-t-indigo-600"></div>
-      <p class="mt-4 text-slate-500 text-sm font-semibold italic">Sinkronisasi data...</p>
+    <!-- Loading State -->
+    <div v-if="isLoading" class="flex flex-col items-center justify-center py-16 sm:py-24">
+      <div class="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-4 border-slate-100 border-t-indigo-600"></div>
+      <p class="mt-4 text-slate-500 text-xs sm:text-sm font-semibold italic">Sinkronisasi data...</p>
     </div>
 
-    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-      <div v-for="column in columns" :key="column.status" class="flex flex-col bg-slate-100/40 rounded-2xl border border-slate-200/60 p-4 min-h-[650px] transition-all">
-        <div class="flex items-center justify-between mb-6 px-1">
-          <div class="flex items-center gap-3">
-            <component
-              :is="column.icon"
-              :size="18"
-              :class="{
-                'text-indigo-500': column.status === 'PLAN',
-                'text-amber-500': column.status === 'DOING',
-                'text-emerald-500': column.status === 'DONE',
-              }"
-            />
-            <h3 class="font-bold text-slate-700 text-sm uppercase tracking-widest">{{ column.title }}</h3>
-            <span class="px-2 py-0.5 bg-white border border-slate-200 text-slate-500 text-[10px] font-black rounded-md shadow-sm">
-              {{ getTasksByStatus(column.status).length }}
-            </span>
-          </div>
-          <button @click="openAddModal(column.status)" class="p-1.5 bg-white text-slate-400 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200 rounded-lg transition-all shadow-sm">
-            <Plus :size="16" />
-          </button>
-        </div>
+    <!-- Kanban Board -->
+    <div v-else class="relative">
+      <!-- Mobile scroll hint -->
+      <div class="lg:hidden text-[10px] text-slate-400 font-medium mb-2 flex items-center gap-1">
+        <span>← Geser untuk melihat kolom lain →</span>
+      </div>
 
+      <!-- Scrollable container for mobile/tablet -->
+      <div class="flex lg:grid lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6 overflow-x-auto lg:overflow-x-visible pb-4 lg:pb-0 snap-x snap-mandatory scroll-smooth -mx-3 px-3 sm:-mx-4 sm:px-4 lg:mx-0 lg:px-0">
         <div
-          data-droppable
-          class="flex-1 space-y-4 rounded-xl transition-all duration-300"
-          :class="{ 'bg-indigo-50/50 ring-2 ring-indigo-300 ring-dashed': dragOverColumn === column.status }"
-          @dragover="onDragOver($event, column.status)"
-          @dragleave="onDragLeave"
-          @drop="onDrop($event, column.status)"
+          v-for="column in columns"
+          :key="column.status"
+          class="flex-shrink-0 w-[280px] sm:w-[320px] lg:w-auto snap-center flex flex-col bg-slate-100/40 rounded-2xl border border-slate-200/60 p-3 sm:p-4 min-h-[500px] sm:min-h-[600px] lg:min-h-[650px] transition-all"
         >
-          <div v-if="getTasksByStatus(column.status).length === 0" class="border-2 border-dashed border-slate-200 rounded-2xl py-12 flex flex-col items-center justify-center opacity-40">
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Tarik tugas ke sini</p>
+          <!-- Column Header -->
+          <div class="flex items-center justify-between mb-4 sm:mb-6 px-1">
+            <div class="flex items-center gap-2 sm:gap-3">
+              <component
+                :is="column.icon"
+                :size="16"
+                class="sm:w-[18px] sm:h-[18px]"
+                :class="{
+                  'text-indigo-500': column.status === 'PLAN',
+                  'text-amber-500': column.status === 'DOING',
+                  'text-emerald-500': column.status === 'DONE',
+                }"
+              />
+              <h3 class="font-bold text-slate-700 text-xs sm:text-sm uppercase tracking-wider sm:tracking-widest">{{ column.title }}</h3>
+              <span class="px-1.5 sm:px-2 py-0.5 bg-white border border-slate-200 text-slate-500 text-[9px] sm:text-[10px] font-black rounded-md shadow-sm">
+                {{ getTasksByStatus(column.status).length }}
+              </span>
+            </div>
+            <button @click="openAddModal(column.status)" class="p-1 sm:p-1.5 bg-white text-slate-400 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200 rounded-lg transition-all shadow-sm">
+              <Plus :size="14" class="sm:w-4 sm:h-4" />
+            </button>
           </div>
 
+          <!-- Droppable Area -->
           <div
-            v-for="task in getTasksByStatus(column.status)"
-            :key="task.id"
-            draggable="true"
-            @dragstart="onDragStart($event, task.id)"
-            @dragend="onDragEnd"
-            @dragover="onDragOverTask($event, task.id)"
-            class="group bg-white p-4 rounded-xl shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200 transition-all duration-200 relative overflow-hidden"
-            :class="{
-              'opacity-30 scale-95': draggedTaskId === task.id,
-              'ring-2 ring-indigo-500': dragOverTaskId === task.id && draggedTaskId !== task.id,
-            }"
+            data-droppable
+            class="flex-1 space-y-3 sm:space-y-4 rounded-xl transition-all duration-300 overflow-y-auto"
+            :class="{ 'bg-indigo-50/50 ring-2 ring-indigo-300 ring-dashed': dragOverColumn === column.status }"
+            @dragover="onDragOver($event, column.status)"
+            @dragleave="onDragLeave"
+            @drop="onDrop($event, column.status)"
           >
-            <div
-              class="absolute left-0 top-0 bottom-0 w-1.5"
-              :class="{
-                'bg-indigo-500': column.status === 'PLAN',
-                'bg-amber-500': column.status === 'DOING',
-                'bg-emerald-500': column.status === 'DONE',
-              }"
-            ></div>
-
-            <div class="flex items-start justify-between gap-3">
-              <h4 class="font-bold text-slate-800 text-[15px] leading-snug flex-1">{{ task.name }}</h4>
-              <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button @click.stop="openEditModal(task)" class="p-1 text-slate-400 hover:text-indigo-600 transition-colors">
-                  <Pencil :size="14" />
-                </button>
-                <button @click.stop="deleteTask(task.id)" class="p-1 text-slate-400 hover:text-red-500 transition-colors">
-                  <Trash2 :size="14" />
-                </button>
-              </div>
+            <!-- Empty State -->
+            <div v-if="getTasksByStatus(column.status).length === 0" class="border-2 border-dashed border-slate-200 rounded-2xl py-8 sm:py-12 flex flex-col items-center justify-center opacity-40">
+              <p class="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Tarik tugas ke sini</p>
             </div>
 
-            <p v-if="task.description" class="text-xs text-slate-500 mt-2 line-clamp-2 font-medium leading-relaxed">
-              {{ task.description }}
-            </p>
+            <!-- Task Cards -->
+            <div
+              v-for="task in getTasksByStatus(column.status)"
+              :key="task.id"
+              draggable="true"
+              @dragstart="onDragStart($event, task.id)"
+              @dragend="onDragEnd"
+              @dragover="onDragOverTask($event, task.id)"
+              class="group bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200 transition-all duration-200 relative overflow-hidden"
+              :class="{
+                'opacity-30 scale-95': draggedTaskId === task.id,
+                'ring-2 ring-indigo-500': dragOverTaskId === task.id && draggedTaskId !== task.id,
+              }"
+            >
+              <!-- Status Bar -->
+              <div
+                class="absolute left-0 top-0 bottom-0 w-1 sm:w-1.5"
+                :class="{
+                  'bg-indigo-500': column.status === 'PLAN',
+                  'bg-amber-500': column.status === 'DOING',
+                  'bg-emerald-500': column.status === 'DONE',
+                }"
+              ></div>
 
-            <div class="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between">
-              <div class="flex items-center gap-1.5 text-slate-300">
-                <GripVertical :size="12" />
-                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Task-{{ task.id }}</span>
+              <!-- Task Content -->
+              <div class="flex items-start justify-between gap-2 sm:gap-3">
+                <h4 class="font-bold text-slate-800 text-sm sm:text-[15px] leading-snug flex-1">{{ task.name }}</h4>
+                <div class="flex gap-0.5 sm:gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button @click.stop="openTagModal(task.id)" class="p-1.5 sm:p-1 text-slate-400 hover:text-indigo-600 transition-colors">
+                    <TagIcon :size="14" />
+                  </button>
+                  <button @click.stop="openEditModal(task)" class="p-1.5 sm:p-1 text-slate-400 hover:text-indigo-600 transition-colors">
+                    <Pencil :size="14" />
+                  </button>
+                  <button @click.stop="deleteTask(task.id)" class="p-1.5 sm:p-1 text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 :size="14" />
+                  </button>
+                </div>
               </div>
-              <div class="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
-                <MoreVertical :size="12" class="text-slate-400" />
+
+              <p v-if="task.description" class="text-[11px] sm:text-xs text-slate-500 mt-1.5 sm:mt-2 line-clamp-2 font-medium leading-relaxed">
+                {{ task.description }}
+              </p>
+
+              <!-- Task Tags -->
+              <div v-if="getTaskTags(task.id).length" class="mt-2 sm:mt-3 flex flex-wrap gap-1.5">
+                <span v-for="tag in getTaskTags(task.id)" :key="tag.id" class="px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold text-white shadow-sm" :style="{ backgroundColor: tag.color || '#3B82F6' }">
+                  {{ tag.name }}
+                </span>
+              </div>
+
+              <!-- Task Footer -->
+              <div class="mt-3 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-50 flex items-center justify-between">
+                <div class="flex items-center gap-1 sm:gap-1.5 text-slate-300">
+                  <GripVertical :size="12" />
+                  <span class="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400">Task-{{ task.id }}</span>
+                </div>
+                <div class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                  <MoreVertical :size="10" class="sm:w-3 sm:h-3 text-slate-400" />
+                </div>
               </div>
             </div>
           </div>
@@ -341,46 +428,93 @@ onUnmounted(() => unsubscribe());
       </div>
     </div>
 
+    <!-- Modal -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showAddModal || showEditModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200" @click.stop>
-            <div class="px-8 py-6">
-              <h2 class="text-xl font-black text-slate-900 mb-1">
+        <div v-if="showAddModal || showEditModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-md overflow-hidden border border-slate-200 max-h-[90vh] sm:max-h-none" @click.stop>
+            <div class="px-5 sm:px-8 py-5 sm:py-6 overflow-y-auto">
+              <!-- Modal Header -->
+              <h2 class="text-lg sm:text-xl font-black text-slate-900 mb-1">
                 {{ showAddModal ? "Buat Tugas Baru" : "Edit Tugas" }}
               </h2>
-              <p class="text-sm text-slate-500 mb-6 font-medium">
+              <p class="text-xs sm:text-sm text-slate-500 mb-5 sm:mb-6 font-medium">
                 {{ showAddModal ? `Menambahkan ke kolom ${addToStatus}` : "Perbarui detail tugas Anda" }}
               </p>
 
-              <form @submit.prevent="showAddModal ? createTask() : updateTask()" class="space-y-5">
+              <!-- Form -->
+              <form @submit.prevent="showAddModal ? createTask() : updateTask()" class="space-y-4 sm:space-y-5">
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Nama Tugas</label>
+                  <label class="block text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] sm:tracking-[0.2em] mb-1.5 sm:mb-2">Nama Tugas</label>
                   <input
                     v-model="newTaskName"
                     type="text"
                     required
-                    class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-semibold text-slate-800"
+                    :disabled="isSubmitting"
+                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-semibold text-slate-800 text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
                     placeholder="Contoh: Desain Landing Page"
                   />
                 </div>
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Deskripsi (Opsional)</label>
+                  <label class="block text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] sm:tracking-[0.2em] mb-1.5 sm:mb-2">Deskripsi (Opsional)</label>
                   <textarea
                     v-model="newTaskDescription"
-                    rows="4"
-                    class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-slate-800"
+                    rows="3"
+                    :disabled="isSubmitting"
+                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-slate-800 text-sm sm:text-base resize-none disabled:opacity-50 disabled:cursor-not-allowed"
                     placeholder="Jelaskan detail tugas ini..."
                   ></textarea>
                 </div>
 
-                <div class="flex gap-3 pt-4">
-                  <button type="button" @click="showAddModal ? closeAddModal() : closeEditModal()" class="flex-1 px-6 py-3 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-2xl transition-colors">Batal</button>
-                  <button type="submit" class="flex-1 px-6 py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95">
-                    {{ showAddModal ? "Simpan Tugas" : "Perbarui" }}
+                <!-- Buttons -->
+                <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4 pb-2 sm:pb-0">
+                  <button
+                    type="button"
+                    @click="showAddModal ? closeAddModal() : closeEditModal()"
+                    :disabled="isSubmitting"
+                    class="flex-1 px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl sm:rounded-2xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    :disabled="isSubmitting"
+                    class="flex-1 px-4 sm:px-6 py-2.5 sm:py-3 bg-indigo-600 text-white text-xs sm:text-sm font-bold rounded-xl sm:rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center gap-2"
+                  >
+                    <svg v-if="isSubmitting" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>{{ isSubmitting ? "Menyimpan..." : showAddModal ? "Simpan Tugas" : "Perbarui" }}</span>
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Tag Modal -->
+      <Transition name="modal">
+        <div v-if="showTagModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4" @click="closeTagModal">
+          <div class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+          <div class="relative bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-lg overflow-hidden border border-slate-200 max-h-[85vh] sm:max-h-[80vh]" @click.stop>
+            <div class="px-5 sm:px-8 py-5 sm:py-6 overflow-y-auto max-h-[85vh] sm:max-h-[80vh]">
+              <!-- Modal Header -->
+              <div class="flex items-center justify-between mb-5">
+                <div>
+                  <h2 class="text-lg sm:text-xl font-black text-slate-900">Kelola Tag</h2>
+                  <p class="text-xs sm:text-sm text-slate-500 font-medium">Task ID: {{ selectedTaskId }}</p>
+                </div>
+                <button @click="closeTagModal" class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- HandleTags Component -->
+              <HandleTags :user-id="userId" :task-id="selectedTaskId" @tags-updated="onTagsUpdated" />
             </div>
           </div>
         </div>
@@ -414,6 +548,25 @@ onUnmounted(() => unsubscribe());
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
+}
+
+/* Hide scrollbar but keep functionality */
+.overflow-x-auto {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.overflow-x-auto::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth scroll on touch devices */
+@media (max-width: 1023px) {
+  .snap-x {
+    scroll-snap-type: x mandatory;
+  }
+  .snap-center {
+    scroll-snap-align: center;
+  }
 }
 
 * {
