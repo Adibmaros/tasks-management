@@ -2,7 +2,7 @@ import prisma from "~~/server/utils/prisma";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
-  const { name, description, status, userId } = body;
+  const { name, description, status, userId, durationMinutes } = body;
 
   if (!name || !userId) {
     throw createError({
@@ -30,6 +30,8 @@ export default defineEventHandler(async (event) => {
         status: status || "PLAN",
         position: newPosition,
         userId: Number(userId),
+        durationMinutes: durationMinutes || null,
+        startedAt: status === "DOING" ? new Date() : null,
       },
     });
 

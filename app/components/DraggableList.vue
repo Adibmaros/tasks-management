@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Plus, Pencil, Trash2, GripVertical, Layout, MoreVertical, Clock, CheckCircle2, Circle, TagIcon } from "lucide-vue-next";
+import { Plus, Pencil, Trash2, GripVertical, Layout, MoreVertical, Clock, CheckCircle2, Circle, TagIcon, Archive, ArchiveRestore, X, Timer, Play } from "lucide-vue-next";
+import { useTaskTimer } from "~/composables/useTaskTimer";
 
 // 1. Interfaces & Types
 interface Tag {
@@ -12,8 +13,10 @@ interface Task {
   id: number;
   name: string;
   description?: string | null;
-  status: "PLAN" | "DOING" | "DONE";
+  status: "PLAN" | "DOING" | "DONE" | "ARCHIEVED";
   position: number;
+  durationMinutes?: number | null;
+  startedAt?: string | Date | null;
   tags?: Tag[];
 }
 
@@ -23,12 +26,14 @@ const props = defineProps<{
 
 // 2. State Management
 const tasks = ref<Task[]>([]);
+const archivedTasks = ref<Task[]>([]);
 const isLoading = ref(true);
 const isSubmitting = ref(false);
 const isDragging = ref(false);
 const showAddModal = ref(false);
 const showEditModal = ref(false);
 const showTagModal = ref(false);
+const showArchiveModal = ref(false);
 const selectedTaskId = ref<number | undefined>(undefined);
 const addToStatus = ref<"PLAN" | "DOING" | "DONE">("PLAN");
 const editingTask = ref<Task | null>(null);
@@ -51,6 +56,27 @@ const columns = [
   { status: "DOING" as const, title: "Proses", color: "amber", icon: Clock },
   { status: "DONE" as const, title: "Selesai", color: "emerald", icon: CheckCircle2 },
 ];
+
+// Timer composable
+const { calculateTimeLeft, formatTimeLeft, getProgressPercentage, sendNotification, requestNotificationPermission, clearNotification } = useTaskTimer();
+
+// Timer states
+const timerIntervalId = ref<NodeJS.Timeout | null>(null);
+const taskTimers = ref<Record<number, number>>({});
+
+// Duration options for modal
+const durationOptions = [
+  { label: "15 menit", value: 15 },
+  { label: "30 menit", value: 30 },
+  { label: "45 menit", value: 45 },
+  { label: "1 jam", value: 60 },
+  { label: "1.5 jam", value: 90 },
+  { label: "2 jam", value: 120 },
+  { label: "3 jam", value: 180 },
+  { label: "4 jam", value: 240 },
+];
+
+const newTaskDuration = ref<number | null>(null);
 
 // 3. Logic & Handlers
 
@@ -80,14 +106,24 @@ const fetchTasks = async (silent = false) => {
   try {
     if (!silent) isLoading.value = true;
 
+    // Fetch active tasks (excluding ARCHIEVED)
     const data = await $fetch<Task[]>(`/api/tasks/user/${props.userId}`);
+    tasks.value = data.filter((t) => t.status !== "ARCHIEVED");
 
-    tasks.value = data;
     await fetchAllTaskTags();
   } catch (error) {
     // Error handling tanpa logging
   } finally {
     if (!silent) isLoading.value = false;
+  }
+};
+
+const fetchArchivedTasks = async () => {
+  try {
+    const data = await $fetch<Task[]>(`/api/tasks/user/${props.userId}/archived`);
+    archivedTasks.value = data;
+  } catch (error) {
+    archivedTasks.value = [];
   }
 };
 
@@ -103,6 +139,7 @@ const createTask = async () => {
         description: newTaskDescription.value || null,
         status: addToStatus.value,
         userId: props.userId,
+        durationMinutes: newTaskDuration.value,
       },
     });
     tasks.value.push(task);
@@ -124,6 +161,7 @@ const updateTask = async () => {
       body: {
         name: newTaskName.value,
         description: newTaskDescription.value || null,
+        durationMinutes: newTaskDuration.value,
       },
     });
     const index = tasks.value.findIndex((t) => t.id === updated.id);
@@ -142,8 +180,32 @@ const deleteTask = async (id: number) => {
   try {
     await $fetch<void>(`/api/tasks/${id}`, { method: "DELETE" });
     tasks.value = tasks.value.filter((t) => t.id !== id);
+    // Juga hapus dari archivedTasks jika ada
+    archivedTasks.value = archivedTasks.value.filter((t) => t.id !== id);
   } catch (error) {
     // Error handling tanpa logging
+  }
+};
+
+const archiveTask = async (taskId: number) => {
+  if (!confirm("Arsipkan tugas ini?")) return;
+  setLocalUpdate?.(true);
+  try {
+    await $fetch(`/api/tasks/${taskId}/archive`, { method: "PUT" });
+    tasks.value = tasks.value.filter((t) => t.id !== taskId);
+  } catch (error) {
+    // Error handling
+  }
+};
+
+const unarchiveTask = async (taskId: number) => {
+  setLocalUpdate?.(true);
+  try {
+    await $fetch(`/api/tasks/${taskId}/unarchive`, { method: "PUT" });
+    await fetchArchivedTasks();
+    await fetchTasks(true);
+  } catch (error) {
+    // Error handling
   }
 };
 
@@ -196,25 +258,75 @@ const reorderTask = async (taskId: number, newStatus: "PLAN" | "DOING" | "DONE",
   }
 };
 
+// Timer update function
+const updateTimers = () => {
+  tasks.value.forEach((task) => {
+    if (task.status === "DOING" && task.durationMinutes && task.startedAt) {
+      const timeLeft = calculateTimeLeft({
+        id: task.id,
+        name: task.name,
+        startedAt: task.startedAt,
+        durationMinutes: task.durationMinutes,
+      });
+      taskTimers.value[task.id] = timeLeft;
+
+      // Send notification when time is up
+      if (timeLeft <= 0) {
+        sendNotification({
+          id: task.id,
+          name: task.name,
+          startedAt: task.startedAt,
+          durationMinutes: task.durationMinutes,
+        });
+      }
+    }
+  });
+};
+
+const getTaskTimeLeft = (taskId: number): string => {
+  const timeLeft = taskTimers.value[taskId];
+  if (timeLeft === undefined) return "";
+  return formatTimeLeft(timeLeft);
+};
+
+const getTaskProgress = (task: Task): number => {
+  if (!task.startedAt || !task.durationMinutes) return 0;
+  return getProgressPercentage({
+    id: task.id,
+    name: task.name,
+    startedAt: task.startedAt,
+    durationMinutes: task.durationMinutes,
+  });
+};
+
+const isTaskExpired = (taskId: number): boolean => {
+  const timeLeft = taskTimers.value[taskId];
+  return timeLeft !== undefined && timeLeft <= 0;
+};
+
 // 4. Modal Control
 const openAddModal = (status: "PLAN" | "DOING" | "DONE") => {
   addToStatus.value = status;
+  newTaskDuration.value = null;
   showAddModal.value = true;
 };
 const closeAddModal = () => {
   showAddModal.value = false;
   newTaskName.value = "";
   newTaskDescription.value = "";
+  newTaskDuration.value = null;
 };
 const openEditModal = (task: Task) => {
   editingTask.value = task;
   newTaskName.value = task.name;
   newTaskDescription.value = task.description || "";
+  newTaskDuration.value = task.durationMinutes || null;
   showEditModal.value = true;
 };
 const closeEditModal = () => {
   showEditModal.value = false;
   editingTask.value = null;
+  newTaskDuration.value = null;
 };
 
 const openTagModal = (taskId: number) => {
@@ -231,6 +343,15 @@ const onTagsUpdated = async () => {
   if (selectedTaskId.value) {
     await fetchTaskTags(selectedTaskId.value);
   }
+};
+
+const openArchiveModal = async () => {
+  showArchiveModal.value = true;
+  await fetchArchivedTasks();
+};
+
+const closeArchiveModal = () => {
+  showArchiveModal.value = false;
 };
 
 // 5. Drag & Drop Handlers
@@ -281,6 +402,11 @@ const { subscribe, unsubscribe } = useSupabaseRealtime(props.userId);
 
 onMounted(async () => {
   await fetchTasks();
+  await requestNotificationPermission();
+
+  // Start timer interval
+  timerIntervalId.value = setInterval(updateTimers, 1000);
+  updateTimers();
 
   const result = subscribe(() => {
     if (!isDragging.value) fetchTasks(true);
@@ -288,7 +414,12 @@ onMounted(async () => {
   if (result?.setLocalUpdate) setLocalUpdate = result.setLocalUpdate;
 });
 
-onUnmounted(() => unsubscribe());
+onUnmounted(() => {
+  unsubscribe();
+  if (timerIntervalId.value) {
+    clearInterval(timerIntervalId.value);
+  }
+});
 </script>
 
 <template>
@@ -299,10 +430,19 @@ onUnmounted(() => unsubscribe());
         <h1 class="text-lg sm:text-xl lg:text-2xl font-extrabold text-slate-900 tracking-tight">Papan Tugas</h1>
         <p class="text-[10px] sm:text-xs lg:text-sm text-slate-500 font-medium">Atur alur kerja Anda dengan drag and drop.</p>
       </div>
-      <div class="flex items-center gap-2 bg-white p-1 sm:p-1.5 rounded-lg sm:rounded-xl border border-slate-200 shadow-sm w-fit">
-        <button class="px-2.5 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-[9px] sm:text-[10px] lg:text-xs font-bold bg-indigo-50 text-indigo-700 rounded-md sm:rounded-lg flex items-center gap-1 sm:gap-1.5 lg:gap-2">
-          <Layout :size="12" class="sm:w-[14px] sm:h-[14px]" /> Kanban
+      <div class="flex items-center gap-2">
+        <!-- Archive Button -->
+        <button
+          @click="openArchiveModal"
+          class="px-2.5 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-[9px] sm:text-[10px] lg:text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg sm:rounded-xl flex items-center gap-1 sm:gap-1.5 lg:gap-2 transition-colors"
+        >
+          <Archive :size="12" class="sm:w-[14px] sm:h-[14px]" /> Arsip
         </button>
+        <div class="flex items-center gap-2 bg-white p-1 sm:p-1.5 rounded-lg sm:rounded-xl border border-slate-200 shadow-sm w-fit">
+          <button class="px-2.5 sm:px-3 lg:px-4 py-1.5 sm:py-2 text-[9px] sm:text-[10px] lg:text-xs font-bold bg-indigo-50 text-indigo-700 rounded-md sm:rounded-lg flex items-center gap-1 sm:gap-1.5 lg:gap-2">
+            <Layout :size="12" class="sm:w-[14px] sm:h-[14px]" /> Kanban
+          </button>
+        </div>
       </div>
     </div>
 
@@ -371,19 +511,22 @@ onUnmounted(() => unsubscribe());
               @dragstart="onDragStart($event, task.id)"
               @dragend="onDragEnd"
               @dragover="onDragOverTask($event, task.id)"
-              class="group bg-white p-2.5 sm:p-3 lg:p-4 rounded-lg sm:rounded-xl shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200 transition-all duration-200 relative overflow-hidden"
+              class="group bg-white p-2.5 sm:p-3 lg:p-4 rounded-lg sm:rounded-xl shadow-sm border cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200 relative overflow-hidden"
               :class="{
                 'opacity-30 scale-95': draggedTaskId === task.id,
                 'ring-2 ring-indigo-500': dragOverTaskId === task.id && draggedTaskId !== task.id,
+                'border-red-300 bg-red-50/30': isTaskExpired(task.id),
+                'border-slate-200 hover:border-indigo-200': !isTaskExpired(task.id),
               }"
             >
               <!-- Status Bar -->
               <div
                 class="absolute left-0 top-0 bottom-0 w-1 sm:w-1.5"
                 :class="{
-                  'bg-indigo-500': column.status === 'PLAN',
-                  'bg-amber-500': column.status === 'DOING',
+                  'bg-indigo-500': column.status === 'PLAN' && !isTaskExpired(task.id),
+                  'bg-amber-500': column.status === 'DOING' && !isTaskExpired(task.id),
                   'bg-emerald-500': column.status === 'DONE',
+                  'bg-red-500 animate-pulse': isTaskExpired(task.id),
                 }"
               ></div>
 
@@ -397,6 +540,9 @@ onUnmounted(() => unsubscribe());
                   <button @click.stop="openEditModal(task)" class="p-1 sm:p-1.5 text-slate-400 hover:text-indigo-600 transition-colors">
                     <Pencil :size="12" class="sm:w-[14px] sm:h-[14px]" />
                   </button>
+                  <button @click.stop="archiveTask(task.id)" class="p-1 sm:p-1.5 text-slate-400 hover:text-amber-600 transition-colors" title="Arsipkan">
+                    <Archive :size="12" class="sm:w-[14px] sm:h-[14px]" />
+                  </button>
                   <button @click.stop="deleteTask(task.id)" class="p-1 sm:p-1.5 text-slate-400 hover:text-red-500 transition-colors">
                     <Trash2 :size="12" class="sm:w-[14px] sm:h-[14px]" />
                   </button>
@@ -406,6 +552,31 @@ onUnmounted(() => unsubscribe());
               <p v-if="task.description" class="text-[10px] sm:text-[11px] lg:text-xs text-slate-500 mt-1 sm:mt-1.5 lg:mt-2 line-clamp-2 font-medium leading-relaxed">
                 {{ task.description }}
               </p>
+
+              <!-- Timer Display for DOING tasks -->
+              <div v-if="column.status === 'DOING' && task.durationMinutes && task.startedAt" class="mt-2 sm:mt-2.5">
+                <div class="flex items-center justify-between mb-1">
+                  <div class="flex items-center gap-1">
+                    <Timer :size="10" class="sm:w-3 sm:h-3" :class="isTaskExpired(task.id) ? 'text-red-500' : 'text-amber-500'" />
+                    <span class="text-[9px] sm:text-[10px] font-bold" :class="isTaskExpired(task.id) ? 'text-red-600' : 'text-amber-600'">
+                      {{ getTaskTimeLeft(task.id) }}
+                    </span>
+                  </div>
+                  <span class="text-[8px] sm:text-[9px] text-slate-400">{{ task.durationMinutes }}m</span>
+                </div>
+                <!-- Progress Bar -->
+                <div class="h-1 sm:h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div class="h-full transition-all duration-1000 rounded-full" :class="isTaskExpired(task.id) ? 'bg-red-500' : 'bg-amber-400'" :style="{ width: `${Math.min(100, getTaskProgress(task))}%` }"></div>
+                </div>
+              </div>
+
+              <!-- Duration Badge for non-DOING tasks with duration -->
+              <div v-else-if="task.durationMinutes" class="mt-2 sm:mt-2.5">
+                <span class="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] sm:text-[9px] font-medium">
+                  <Timer :size="8" class="sm:w-[10px] sm:h-[10px]" />
+                  {{ task.durationMinutes }}m
+                </span>
+              </div>
 
               <!-- Task Tags -->
               <div v-if="getTaskTags(task.id).length" class="mt-2 sm:mt-2.5 lg:mt-3 flex flex-wrap gap-1 sm:gap-1.5">
@@ -434,7 +605,8 @@ onUnmounted(() => unsubscribe());
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="showAddModal || showEditModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-md overflow-hidden border border-slate-200 max-h-[90vh] sm:max-h-none" @click.stop>
+          <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" @click="showAddModal ? closeAddModal() : closeEditModal()"></div>
+          <div class="relative bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-md overflow-hidden border border-slate-200 max-h-[90vh] sm:max-h-none" @click.stop>
             <div class="px-5 sm:px-8 py-5 sm:py-6 overflow-y-auto">
               <!-- Modal Header -->
               <h2 class="text-lg sm:text-xl font-black text-slate-900 mb-1">
@@ -468,6 +640,28 @@ onUnmounted(() => unsubscribe());
                   ></textarea>
                 </div>
 
+                <!-- Duration Selector -->
+                <div>
+                  <label class="block text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] sm:tracking-[0.2em] mb-1.5 sm:mb-2">
+                    <Timer :size="10" class="inline mr-1" />
+                    Durasi (Opsional)
+                  </label>
+                  <div class="flex flex-wrap gap-1.5 sm:gap-2">
+                    <button
+                      v-for="opt in durationOptions"
+                      :key="opt.value"
+                      type="button"
+                      @click="newTaskDuration = newTaskDuration === opt.value ? null : opt.value"
+                      :disabled="isSubmitting"
+                      class="px-2.5 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl border transition-all"
+                      :class="newTaskDuration === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'"
+                    >
+                      {{ opt.label }}
+                    </button>
+                  </div>
+                  <p v-if="newTaskDuration" class="mt-2 text-[10px] sm:text-xs text-indigo-600 font-medium">⏱️ Timer akan dimulai saat tugas dipindah ke "Proses"</p>
+                </div>
+
                 <!-- Buttons -->
                 <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4 pb-2 sm:pb-0">
                   <button
@@ -491,6 +685,55 @@ onUnmounted(() => unsubscribe());
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Archive Modal -->
+      <Transition name="modal">
+        <div v-if="showArchiveModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4" @click="closeArchiveModal">
+          <div class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+          <div class="relative bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-lg overflow-hidden border border-slate-200 max-h-[85vh] sm:max-h-[80vh]" @click.stop>
+            <div class="px-5 sm:px-8 py-5 sm:py-6">
+              <!-- Modal Header -->
+              <div class="flex items-center justify-between mb-5">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600">
+                    <Archive :size="20" class="sm:w-6 sm:h-6" />
+                  </div>
+                  <div>
+                    <h2 class="text-lg sm:text-xl font-black text-slate-900">Tugas Terarsip</h2>
+                    <p class="text-xs sm:text-sm text-slate-500 font-medium">{{ archivedTasks.length }} tugas diarsipkan</p>
+                  </div>
+                </div>
+                <button @click="closeArchiveModal" class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all">
+                  <X :size="20" class="sm:w-6 sm:h-6" />
+                </button>
+              </div>
+
+              <!-- Archived Tasks List -->
+              <div class="overflow-y-auto max-h-[60vh] space-y-2 sm:space-y-3">
+                <div v-if="archivedTasks.length === 0" class="text-center py-10 border-2 border-dashed border-slate-100 rounded-2xl">
+                  <Archive class="mx-auto text-slate-200 mb-2 w-8 h-8" />
+                  <p class="text-xs text-slate-400 font-medium">Belum ada tugas yang diarsipkan.</p>
+                </div>
+
+                <div v-for="task in archivedTasks" :key="task.id" class="flex items-center justify-between p-3 sm:p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                  <div class="flex-1 min-w-0">
+                    <h4 class="font-bold text-slate-700 text-sm truncate">{{ task.name }}</h4>
+                    <p v-if="task.description" class="text-xs text-slate-500 truncate mt-0.5">{{ task.description }}</p>
+                  </div>
+                  <div class="flex items-center gap-1 ml-3">
+                    <button @click="unarchiveTask(task.id)" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Kembalikan">
+                      <ArchiveRestore :size="16" />
+                    </button>
+                    <button @click="deleteTask(task.id)" class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Hapus permanen">
+                      <Trash2 :size="16" />
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -534,44 +777,11 @@ onUnmounted(() => unsubscribe());
 .modal-enter-from,
 .modal-leave-to {
   opacity: 0;
-  transform: scale(0.9) translateY(20px);
+  transform: translateY(10px);
 }
-
-/* Scrollbar Styling for Kanban */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
-}
-
-/* Hide scrollbar but keep functionality */
-.overflow-x-auto {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.overflow-x-auto::-webkit-scrollbar {
-  display: none;
-}
-
-/* Smooth scroll on touch devices */
-@media (max-width: 1023px) {
-  .snap-x {
-    scroll-snap-type: x mandatory;
-  }
-  .snap-center {
-    scroll-snap-align: center;
-  }
-}
-
-* {
-  font-family: "Plus Jakarta Sans", sans-serif;
+.modal-leave-active {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 </style>

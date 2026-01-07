@@ -24,10 +24,25 @@ export default defineEventHandler(async (event) => {
   const oldStatus = task.status;
   const oldPosition = task.position;
 
+  // Prepare update data
+  const updateData: any = {
+    status: newStatus,
+    position: newPosition,
+  };
+
+  // Set startedAt when moving to DOING
+  if (newStatus === "DOING" && oldStatus !== "DOING") {
+    updateData.startedAt = new Date();
+  }
+  // Clear startedAt when moving away from DOING
+  else if (newStatus !== "DOING" && oldStatus === "DOING") {
+    updateData.startedAt = null;
+  }
+
   await prisma.$transaction(async (tx) => {
+    // If changing status
     if (oldStatus !== newStatus) {
-      // Moving to different column
-      // Decrease position of tasks in old column
+      // Reorder old column
       await tx.task.updateMany({
         where: {
           userId,
@@ -37,7 +52,7 @@ export default defineEventHandler(async (event) => {
         data: { position: { decrement: 1 } },
       });
 
-      // Increase position of tasks in new column
+      // Make space in new column
       await tx.task.updateMany({
         where: {
           userId,
@@ -45,12 +60,6 @@ export default defineEventHandler(async (event) => {
           position: { gte: newPosition },
         },
         data: { position: { increment: 1 } },
-      });
-
-      // Update the task
-      await tx.task.update({
-        where: { id: taskId },
-        data: { status: newStatus, position: newPosition },
       });
     } else {
       // Same column reorder
@@ -73,12 +82,13 @@ export default defineEventHandler(async (event) => {
           data: { position: { increment: 1 } },
         });
       }
-
-      await tx.task.update({
-        where: { id: taskId },
-        data: { position: newPosition },
-      });
     }
+
+    // Update the task
+    await tx.task.update({
+      where: { id: taskId },
+      data: updateData,
+    });
   });
 
   return { success: true };

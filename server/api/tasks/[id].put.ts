@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 export default defineEventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, "id") || "0");
   const body = await readBody(event);
-  const { name, description } = body;
+  const { name, description, durationMinutes } = body;
 
   if (!id || isNaN(id)) {
     throw createError({
@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
     data: {
       name,
       description: description || null,
+      durationMinutes: durationMinutes !== undefined ? durationMinutes : undefined,
     },
   });
 

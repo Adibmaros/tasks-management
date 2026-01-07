@@ -28,6 +28,11 @@ model Task {
   description String?  @db.Text
   status      Status   @default(PLAN)
   position    Int
+
+
+  durationMinutes Int?     // Durasi dalam menit (opsional)
+  startedAt       DateTime? // Kapan task dimulai
+
   createdAt   DateTime @default(now()) @db.Timestamp(0)
   updatedAt   DateTime @updatedAt @db.Timestamp(0)
 
@@ -72,6 +77,7 @@ enum Status {
   PLAN
   DOING
   DONE
+  ARCHIEVED
 }
 
 
